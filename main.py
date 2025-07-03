@@ -68,16 +68,21 @@ async def home_feed() -> str:
 
     """
     data = await xhs_api.home_feed()
-    result = "搜索结果：\n\n"
+    result = "首页推荐：\n\n"
     if 'data' in data and 'items' in data['data'] and len(data['data']['items']) > 0:
         for i in range(0, len(data['data']['items'])):
             item = data['data']['items'][i]
             if 'note_card' in item and 'display_title' in item['note_card']:
                 title = item['note_card']['display_title']
                 liked_count = item['note_card']['interact_info']['liked_count']
-                # cover=item['note_card']['cover']['url_default']
+                
+                # 判断笔记类型
+                note_type = "📷图片"
+                if 'video' in item['note_card']:
+                    note_type = "🎬视频"
+                
                 url = f'https://www.xiaohongshu.com/explore/{item["id"]}?xsec_token={item["xsec_token"]}'
-                result += f"{i}. {title}  \n 点赞数:{liked_count} \n   链接: {url}  \n\n"
+                result += f"{i}. [{note_type}] {title}\n   点赞数: {liked_count}\n   链接: {url}\n\n"
     else:
         result = await check_cookie()
         if "有效" in result:
@@ -101,9 +106,14 @@ async def search_notes(keywords: str) -> str:
             if 'note_card' in item and 'display_title' in item['note_card']:
                 title = item['note_card']['display_title']
                 liked_count = item['note_card']['interact_info']['liked_count']
-                # cover=item['note_card']['cover']['url_default']
+                
+                # 判断笔记类型
+                note_type = "📷图片"
+                if 'video' in item['note_card']:
+                    note_type = "🎬视频"
+                
                 url = f'https://www.xiaohongshu.com/explore/{item["id"]}?xsec_token={item["xsec_token"]}'
-                result += f"{i}. {title}  \n 点赞数:{liked_count} \n   链接: {url}  \n\n"
+                result += f"{i}. [{note_type}] {title}\n   点赞数: {liked_count}\n   链接: {url}\n\n"
     else:
         result = await check_cookie()
         if "有效" in result:
@@ -121,6 +131,7 @@ async def get_note_content(url: str) -> str:
     params = get_nodeid_token(url=url)
     data = await xhs_api.get_note_content(**params)
     logger.info(f'url:{url},data:{data}')
+    
     result = ""
     if 'data' in data and 'items' in data['data'] and len(data['data']['items']) > 0:
         for i in range(0, len(data['data']['items'])):
@@ -128,10 +139,39 @@ async def get_note_content(url: str) -> str:
 
             if 'note_card' in item and 'user' in item['note_card']:
                 note_card = item['note_card']
+                
+                # 处理封面图片
                 cover = ''
                 if 'image_list' in note_card and len(note_card['image_list']) > 0 and note_card['image_list'][0][
                     'url_pre']:
                     cover = note_card['image_list'][0]['url_pre']
+
+                # 处理视频地址
+                video_urls = []
+                note_type = "图片笔记"
+                if 'video' in note_card:
+                    note_type = "视频笔记"
+                    video_info = note_card['video']
+                    if 'media' in video_info and 'stream' in video_info['media']:
+                        stream_info = video_info['media']['stream']
+                        
+                        # 提取H264格式视频
+                        if 'h264' in stream_info and len(stream_info['h264']) > 0:
+                            for h264_stream in stream_info['h264']:
+                                if 'master_url' in h264_stream:
+                                    video_urls.append(f"H264: {h264_stream['master_url']}")
+                                if 'backup_urls' in h264_stream:
+                                    for backup_url in h264_stream['backup_urls']:
+                                        video_urls.append(f"H264备用: {backup_url}")
+                        
+                        # 提取H265格式视频
+                        if 'h265' in stream_info and len(stream_info['h265']) > 0:
+                            for h265_stream in stream_info['h265']:
+                                if 'master_url' in h265_stream:
+                                    video_urls.append(f"H265: {h265_stream['master_url']}")
+                                if 'backup_urls' in h265_stream:
+                                    for backup_url in h265_stream['backup_urls']:
+                                        video_urls.append(f"H265备用: {backup_url}")
 
                 data_format = datetime.fromtimestamp(note_card.get('time', 0) / 1000)
                 liked_count = item['note_card']['interact_info']['liked_count']
@@ -141,13 +181,24 @@ async def get_note_content(url: str) -> str:
                 url = f'https://www.xiaohongshu.com/explore/{params["note_id"]}?xsec_token={params["xsec_token"]}'
                 result = f"标题: {note_card.get('title', '')}\n"
                 result += f"作者: {note_card['user'].get('nickname', '')}\n"
+                result += f"类型: {note_type}\n"
                 result += f"发布时间: {data_format}\n"
                 result += f"点赞数: {liked_count}\n"
                 result += f"评论数: {comment_count}\n"
                 result += f"收藏数: {collected_count}\n"
                 result += f"链接: {url}\n\n"
-                result += f"内容:\n{note_card.get('desc', '')}\n"
-                result += f"封面:\n{cover}"
+                result += f"内容:\n{note_card.get('desc', '')}\n\n"
+                
+                # 添加视频地址信息
+                if video_urls:
+                    result += f"视频地址:\n"
+                    for video_url in video_urls:
+                        result += f"  - {video_url}\n"
+                    result += "\n"
+                
+                # 添加封面信息
+                if cover:
+                    result += f"封面图片:\n{cover}"
 
             break
     else:
@@ -205,6 +256,7 @@ async def post_comment(comment: str, note_id: str) -> str:
             return "回复失败"
         else:
             return result
+
 
 
 if __name__ == "__main__":
